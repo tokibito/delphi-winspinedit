@@ -1,5 +1,40 @@
-//WinSpinEditコンポーネントv1.04
 unit WinSpinEdit;
+
+{
+Copyright (c) 2008, Shinya Okano<xxshss@yahoo.co.jp>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the authors nor the names of its contributors
+   may be used to endorse or promote products derived from this
+   software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--
+license: New BSD License
+web: http://www.bitbucket.org/tokibito/winspinedit/overview/
+}
 
 interface
 
@@ -7,7 +42,6 @@ uses Windows, Classes, StdCtrls, ExtCtrls, Controls, Messages, SysUtils,
    Menus, Buttons, ComCtrls, StrUtils;
 
 type
-
   TOnUpDownChanging = procedure(Sender: TObject; ShiftState: TShiftState;
     Button: TUDBtnType) of object;
 
@@ -16,35 +50,35 @@ type
     FMinValue: Int64;
     FMaxValue: Int64;
     FIncrement: Int64;
-    FButton: TUpDown;
-    FEditorEnabled: Boolean;
-    fOnUpDownChanging: TOnUpDownChanging;
-    function GetMinHeight: Integer;
+    FUpDown: TUpDown;
+    FEditable: Boolean;
+    FOnUpDownChanging: TOnUpDownChanging;
+    procedure Clean;
     function GetValue: Int64;
-    function CheckValue (NewValue: Int64): Int64;
-    procedure SetValue (NewValue: Int64);
-    procedure SetEditRect;
+    procedure SetValue(NewValue: Int64);
+    function GetShiftState: TShiftState;
+    procedure ResizeEditRect;
+    function GetMinHeight: Integer;
     procedure WMSize(var Message: TWMSize); message WM_SIZE;
     procedure CMEnter(var Message: TCMGotFocus); message CM_ENTER;
-    procedure CMExit(var Message: TCMExit);   message CM_EXIT;
-    procedure WMPaste(var Message: TWMPaste);   message WM_PASTE;
-    procedure WMCut(var Message: TWMCut);   message WM_CUT;
+    procedure CMExit(var Message: TCMExit); message CM_EXIT;
+    procedure WMPaste(var Message: TWMPaste); message WM_PASTE;
+    procedure WMCut(var Message: TWMCut); message WM_CUT;
   protected
-    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     function IsValidChar(Key: Char): Boolean; virtual;
-    procedure UpDownClick (Sender: TObject; Button: TUDBtnType); virtual;
-    procedure InitPosition(Sender: TObject; Button: TMouseButton;
+    procedure UpDownClick(Sender: TObject; Button: TUDBtnType); virtual;
+    procedure UpDownMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure KeyUp(var Key: Word; Shift: TShiftState); override;
     procedure KeyPress(var Key: Char); override;
     procedure CreateParams(var Params: TCreateParams); override;
     procedure CreateWnd; override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
-    property Button: TUpDown read FButton;
+    property UpDown: TUpDown read FUpDown;
   published
+    property Align;
     property Anchors;
     property AutoSelect;
     property AutoSize;
@@ -53,8 +87,7 @@ type
     property Ctl3D;
     property DragCursor;
     property DragMode;
-    property EditorEnabled: Boolean read FEditorEnabled write FEditorEnabled
-      default True;
+    property Editable: Boolean read FEditable write FEditable default True;
     property Enabled;
     property Font;
     property Increment: Int64 read FIncrement write FIncrement default 1;
@@ -88,81 +121,109 @@ type
     property OnMouseUp;
     property OnStartDrag;
     property OnUpDownChanging: TOnUpDownChanging
-      read fOnUpDownChanging write fOnUpDownChanging;
+      read FOnUpDownChanging write FOnUpDownChanging;
   end;
 
 procedure Register;
 
 implementation
 
-function GetShiftStateSp: TShiftState;
-var
-  ShiftState: TShiftState;
-begin
-  ShiftState:=[];
-  if GetKeyState( VK_SHIFT ) and $8000 <> 0 then
-    ShiftState:=ShiftState + [ssShift];
-//  if GetKeyState( VK_ALT ) and $8000 <> 0 then
-//    ShiftState:=ShiftState + [ssAlt];
-  if GetKeyState( VK_CONTROL ) and $8000 <> 0 then
-    ShiftState:=ShiftState + [ssCtrl];
-  if GetKeyState( VK_LBUTTON ) and $8000 <> 0 then
-    ShiftState:=ShiftState + [ssLeft];
-  if GetKeyState( VK_RBUTTON ) and $8000 <> 0 then
-    ShiftState:=ShiftState + [ssRight];
-  if GetKeyState( VK_MBUTTON ) and $8000 <> 0 then
-    ShiftState:=ShiftState + [ssMiddle];
-  if [ssLeft,ssRight] <= ShiftState then
-    ShiftState:=ShiftState + [ssDouble];
-  Result:=ShiftState;
-end;
-
 constructor TWinSpinEdit.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  FButton := TUpDown.Create (Self);
-  FButton.Width := 15;
-  FButton.Height := 17;
-  FButton.Max:=32767;
-  FButton.Min:=(-32768);
-  FButton.Visible := True;
-  FButton.Parent := Self;
-  FButton.OnClick := UpDownClick;
-  FButton.OnMouseUp:=InitPosition;
-  Text := '0';
+  FUpDown := TUpDown.Create(Self);
+  FUpDown.Width := 15;
+  FUpDown.Height := 18;
+  FUpDown.Max := 32767;
+  FUpDown.Min := (-32768);
+  FUpDown.Visible := True;
+  FUpDown.Parent := Self;
+  FUpDown.OnClick := UpDownClick;
+  FUpDown.OnMouseUp := UpDownMouseUp;
+  Value := 0;
   ControlStyle := ControlStyle - [csSetCaption];
   FIncrement := 1;
-  FEditorEnabled := True;
-  Value:=0;
+  FEditable := True;
 end;
 
 destructor TWinSpinEdit.Destroy;
 begin
-  FButton := nil;
+  FUpDown := nil;
   inherited Destroy;
 end;
 
-procedure Register;
+procedure TWinSpinEdit.Clean;
+var
+  CleanedValue: Int64;
 begin
-  RegisterComponents('toki', [TWinSpinEdit]);
+  CleanedValue := StrToInt64Def(Text, FMinValue);
+  if FMaxValue <> FMinValue then
+  begin
+    if CleanedValue > FMaxValue then
+      CleanedValue := FMaxValue;
+    if CleanedValue < FMinValue then
+      CleanedValue := FMinValue;
+  end;
+  if IntToStr(CleanedValue) <> Text then
+    Value := CleanedValue;
 end;
 
-procedure TWinSpinEdit.GetChildren(Proc: TGetChildProc; Root: TComponent);
+function TWinSpinEdit.GetValue: Int64;
 begin
+  Clean;
+  Result := StrToInt64(Text);
+end;
+
+procedure TWinSpinEdit.SetValue(NewValue: Int64);
+begin
+  Text := IntToStr(NewValue);
+end;
+
+function TWinSpinEdit.GetShiftState: TShiftState;
+begin
+  Result := [];
+  if GetKeyState(VK_SHIFT) and $8000 <> 0 then
+    Result := Result + [ssShift];
+  if GetKeyState(VK_CONTROL) and $8000 <> 0 then
+    Result := Result + [ssCtrl];
+  if GetKeyState(VK_LBUTTON) and $8000 <> 0 then
+    Result := Result + [ssLeft];
+  if GetKeyState(VK_RBUTTON) and $8000 <> 0 then
+    Result := Result + [ssRight];
+  if GetKeyState(VK_MBUTTON) and $8000 <> 0 then
+    Result := Result + [ssMiddle];
+  if [ssLeft, ssRight] <= Result then
+    Result := Result + [ssDouble];
+end;
+
+procedure TWinSpinEdit.UpDownClick(Sender: TObject; Button: TUDBtnType);
+begin
+  if ReadOnly then
+    MessageBeep(0)
+  else
+    begin
+      if Assigned(FOnUpDownChanging) then
+        FOnUpDownChanging(Self, GetShiftState, Button);
+      if Button = btNext then
+        Value := Value + FIncrement
+      else
+        Value := Value - FIncrement;
+    end;
+end;
+
+procedure TWinSpinEdit.UpDownMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  FUpDown.Position := 0;
+  if AutoSelect and not (csLButtonDown in ControlState) then
+    SelectAll;
 end;
 
 procedure TWinSpinEdit.KeyDown(var Key: Word; Shift: TShiftState);
 begin
-  if Key = VK_UP then UpDownClick (Self,btNext)
-  else if Key = VK_DOWN then UpDownClick (Self,btPrev);
+  if Key = VK_UP then UpDownClick(Self, btNext)
+  else if Key = VK_DOWN then UpDownClick(Self, btPrev);
   inherited KeyDown(Key, Shift);
-end;
-
-procedure TWinSpinEdit.KeyUp(var Key: Word; Shift: TShiftState);
-begin
-  inherited KeyUp(Key, Shift);
-  //if CheckValue (Value) <> Value then
-  //  SetValue (Value);
 end;
 
 procedure TWinSpinEdit.KeyPress(var Key: Char);
@@ -170,63 +231,10 @@ begin
   if not IsValidChar(Key) then
   begin
     Key := #0;
-    MessageBeep(0)
+    MessageBeep(0);
   end;
-  if Key <> #0 then inherited KeyPress(Key);
-end;
-
-function TWinSpinEdit.IsValidChar(Key: Char): Boolean;
-begin
-  Result := (Key in [DecimalSeparator, '+', '-', '0'..'9']) or
-    ((Key < #32) and (Key <> Chr(VK_RETURN)));
-  if not FEditorEnabled and Result and ((Key >= #32) or
-      (Key = Char(VK_BACK)) or (Key = Char(VK_DELETE))) then
-    Result := False;
-end;
-
-procedure TWinSpinEdit.CreateParams(var Params: TCreateParams);
-begin
-  inherited CreateParams(Params);
-{  Params.Style := Params.Style and not WS_BORDER;  }
-  Params.Style := Params.Style or ES_MULTILINE or WS_CLIPCHILDREN;
-end;
-
-procedure TWinSpinEdit.CreateWnd;
-begin
-  inherited CreateWnd;
-  SetEditRect;
-end;
-
-procedure TWinSpinEdit.SetEditRect;
-var
-  Loc: TRect;
-begin
-  SendMessage(Handle, EM_GETRECT, 0, LongInt(@Loc));
-  Loc.Bottom := ClientHeight + 1;  {+1 is workaround for windows paint bug}
-  Loc.Right := ClientWidth - FButton.Width - 1;
-  Loc.Top := 0;
-  Loc.Left := 0;  
-  SendMessage(Handle, EM_SETRECTNP, 0, LongInt(@Loc));
-  SendMessage(Handle, EM_GETRECT, 0, LongInt(@Loc));  {debug}
-end;
-
-procedure TWinSpinEdit.WMSize(var Message: TWMSize);
-var
-  MinHeight: Integer;
-begin
-  inherited;
-  MinHeight := GetMinHeight;
-    { text edit bug: if size to less than minheight, then edit ctrl does
-      not display the text }
-  if Height < MinHeight then   
-    Height := MinHeight
-  else if FButton <> nil then
-  begin
-    if NewStyleControls and Ctl3D then
-      FButton.SetBounds(Width - FButton.Width - 3, -1, FButton.Width, Height - 2)
-    else FButton.SetBounds (Width - FButton.Width, 1, FButton.Width, Height - 3);
-    SetEditRect;
-  end;
+  if Key <> #0 then
+    inherited KeyPress(Key);
 end;
 
 function TWinSpinEdit.GetMinHeight: Integer;
@@ -247,71 +255,47 @@ begin
   Result := Metrics.tmHeight + I div 4 + GetSystemMetrics(SM_CYBORDER) * 4 + 2;
 end;
 
-procedure TWinSpinEdit.UpDownClick (Sender: TObject; Button: TUDBtnType);
+{ resize edit }
+procedure TWinSpinEdit.ResizeEditRect;
+var
+  Loc: TRect;
 begin
-  if ReadOnly then MessageBeep(0)
-    else
-    begin
-      if Assigned(fOnUpDownChanging) then
-        fOnUpDownChanging(Self, GetShiftStateSp, Button);
-      if Button=btNext then
-        Value := CheckValue(Value + FIncrement)
-      else
-        Value := CheckValue(Value - FIncrement);
-    end;
+  SendMessage(Handle, EM_GETRECT, 0, LongInt(@Loc));
+  Loc.Bottom := ClientHeight + 1;  { +1 is workaround for windows paint bug }
+  Loc.Right := ClientWidth - FUpDown.Width - 1;
+  Loc.Top := 0;
+  Loc.Left := 0;
+  SendMessage(Handle, EM_SETRECTNP, 0, LongInt(@Loc));
 end;
 
-procedure TWinSpinEdit.InitPosition(Sender: TObject; Button:
-  TMouseButton; Shift: TShiftState; X, Y: Integer);
+{ change edit styles }
+procedure TWinSpinEdit.CreateParams(var Params: TCreateParams);
 begin
-  FButton.Position:=0;
+  inherited CreateParams(Params);
+  Params.Style := Params.Style or ES_MULTILINE or WS_CLIPCHILDREN;
 end;
 
-procedure TWinSpinEdit.WMPaste(var Message: TWMPaste);
+procedure TWinSpinEdit.CreateWnd;
 begin
-  if not FEditorEnabled or ReadOnly then Exit;
-  inherited;
+  inherited CreateWnd;
+  ResizeEditRect;
 end;
 
-procedure TWinSpinEdit.WMCut(var Message: TWMPaste);   
-begin
-  if not FEditorEnabled or ReadOnly then Exit;
-  inherited;
-end;
-
-procedure TWinSpinEdit.CMExit(var Message: TCMExit);
+procedure TWinSpinEdit.WMSize(var Message: TWMSize);
+var
+  MinHeight: Integer;
 begin
   inherited;
-  if CheckValue (Value) <> Value then
-    SetValue (CheckValue (Value));
-end;
-
-function TWinSpinEdit.GetValue: Int64;
-begin
-  try
-    Result := StrToInt64 (Text);
-  except
-    //Value:=FMinValue;
-    Result := FMinValue;
-    //if AutoSelect and not (csLButtonDown in ControlState) then
-    //  SelectAll;
-  end;
-end;
-
-procedure TWinSpinEdit.SetValue (NewValue: Int64);
-begin
-  Text := IntToStr (NewValue);//CheckValue (NewValue));
-end;
-
-function TWinSpinEdit.CheckValue (NewValue: Int64): Int64;
-begin
-  Result := NewValue;
-  if (FMaxValue <> FMinValue) then
+  MinHeight := GetMinHeight;
+  if Height < MinHeight then
+    Height := MinHeight
+  else if FUpDown <> nil then
   begin
-    if NewValue < FMinValue then
-      Result := FMinValue
-    else if NewValue > FMaxValue then
-      Result := FMaxValue;
+    if NewStyleControls and Ctl3D then
+      FUpDown.SetBounds(Width - FUpDown.Width - 3, (-1), FUpDown.Width, Height - 2)
+    else
+      FUpDown.SetBounds(Width - FUpDown.Width, 1, FUpDown.Width, Height - 3);
+    ResizeEditRect;
   end;
 end;
 
@@ -322,5 +306,41 @@ begin
   inherited;
 end;
 
+procedure TWinSpinEdit.CMExit(var Message: TCMExit);
+begin
+  Clean;
+  inherited;
+end;
+
+procedure TWinSpinEdit.WMPaste(var Message: TWMPaste);
+begin
+  if not FEditable or ReadOnly then Exit;
+  inherited;
+end;
+
+procedure TWinSpinEdit.WMCut(var Message: TWMPaste);
+begin
+  if not FEditable or ReadOnly then Exit;
+  inherited;
+end;
+
+function TWinSpinEdit.IsValidChar(Key: Char): Boolean;
+begin
+{$IFDEF UNICODE}
+  Result := CharInSet(Key, [DecimalSeparator, '+', '-', '0'..'9'])
+{$ELSE}
+  Result := (Key in [DecimalSeparator, '+', '-', '0'..'9'])
+{$ENDIF}
+      or ((Key < #32) and (Key <> Chr(VK_RETURN)));
+  if not FEditable and Result and ((Key >= #32)
+      or (Key = Char(VK_BACK)) or (Key = Char(VK_DELETE))) then
+    Result := False;
+end;
+
+{ register components }
+procedure Register;
+begin
+  RegisterComponents('nullpobug', [TWinSpinEdit]);
+end;
+
 end.
-
