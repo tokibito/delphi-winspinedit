@@ -51,7 +51,7 @@ type
     FMaxValue: Int64;
     FIncrement: Int64;
     FUpDown: TUpDown;
-    FEditable: Boolean;
+    FEditorEnabled: Boolean;
     FOnUpDownChanging: TOnUpDownChanging;
     procedure Clean;
     function GetValue: Int64;
@@ -65,6 +65,8 @@ type
     procedure WMPaste(var Message: TWMPaste); message WM_PASTE;
     procedure WMCut(var Message: TWMCut); message WM_CUT;
   protected
+    function GetEnabled: Boolean; override;
+    procedure SetEnabled(Value: Boolean); override;
     function IsValidChar(Key: Char): Boolean; virtual;
     procedure UpDownClick(Sender: TObject; Button: TUDBtnType); virtual;
     procedure UpDownMouseUp(Sender: TObject; Button: TMouseButton;
@@ -87,8 +89,8 @@ type
     property Ctl3D;
     property DragCursor;
     property DragMode;
-    property Editable: Boolean read FEditable write FEditable default True;
-    property Enabled;
+    property EditorEnabled: Boolean read FEditorEnabled write FEditorEnabled default True;
+    property Enabled read GetEnabled write SetEnabled;
     property Font;
     property Increment: Int64 read FIncrement write FIncrement default 1;
     property MaxLength;
@@ -143,7 +145,7 @@ begin
   Value := 0;
   ControlStyle := ControlStyle - [csSetCaption];
   FIncrement := 1;
-  FEditable := True;
+  FEditorEnabled := True;
 end;
 
 destructor TWinSpinEdit.Destroy;
@@ -194,6 +196,17 @@ begin
     Result := Result + [ssMiddle];
   if [ssLeft, ssRight] <= Result then
     Result := Result + [ssDouble];
+end;
+
+function TWinSpinEdit.GetEnabled;
+begin
+  Result := inherited GetEnabled;
+end;
+
+procedure TWinSpinEdit.SetEnabled(Value: Boolean);
+begin
+  inherited SetEnabled(Value);
+  FUpDown.Enabled := Value;
 end;
 
 procedure TWinSpinEdit.UpDownClick(Sender: TObject; Button: TUDBtnType);
@@ -314,13 +327,13 @@ end;
 
 procedure TWinSpinEdit.WMPaste(var Message: TWMPaste);
 begin
-  if not FEditable or ReadOnly then Exit;
+  if not FEditorEnabled or ReadOnly then Exit;
   inherited;
 end;
 
 procedure TWinSpinEdit.WMCut(var Message: TWMPaste);
 begin
-  if not FEditable or ReadOnly then Exit;
+  if not FEditorEnabled or ReadOnly then Exit;
   inherited;
 end;
 
@@ -332,7 +345,7 @@ begin
   Result := (Key in [DecimalSeparator, '+', '-', '0'..'9'])
 {$ENDIF}
       or ((Key < #32) and (Key <> Chr(VK_RETURN)));
-  if not FEditable and Result and ((Key >= #32)
+  if not FEditorEnabled and Result and ((Key >= #32)
       or (Key = Char(VK_BACK)) or (Key = Char(VK_DELETE))) then
     Result := False;
 end;
