@@ -179,6 +179,7 @@ end;
 procedure TWinSpinEdit.SetValue(NewValue: Int64);
 begin
   Text := IntToStr(NewValue);
+  Clean;
 end;
 
 function TWinSpinEdit.GetShiftState: TShiftState;
